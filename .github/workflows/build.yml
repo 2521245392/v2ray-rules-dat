@@ -38,7 +38,10 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: personal-geosite
-          path: dist/*
+          path: |
+            dist/geosite.dat
+            dist/geosite.dat.sha256sum
+            dist/manifest.json
           if-no-files-found: error
 
       - name: Set release metadata
@@ -52,4 +55,7 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           name: ${{ env.RELEASE_NAME }}
           generate_release_notes: false
-          files: dist/*
+          files: |
+            dist/geosite.dat
+            dist/geosite.dat.sha256sum
+            dist/manifest.json
