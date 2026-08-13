@@ -19,3 +19,16 @@ ipwho.is
 aapq.net
 unpkg.com
 nel.goog
+crypto.com
+crunchyroll.com
+pornhub.com
+coinbase.com
+cloudflare-dns.com
+cloudflare-eth.com
+cdnjs.com
+phncdn.com
+cloudflarestorage.com
+zoom.us
+v2ex.com
+linux.do
+workers.dev
