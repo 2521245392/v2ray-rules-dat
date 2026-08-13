@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a minimal geosite.dat containing only the requested seven lists."""
+"""Build a personal geosite.dat tailored to the accompanying routing rules."""
 
 from __future__ import annotations
 
@@ -16,21 +16,55 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-SOURCE_BASE = (
-    "https://raw.githubusercontent.com/"
-    "Loyalsoldier/v2ray-rules-dat/release"
-)
 COMPILER_REPOSITORY = "https://github.com/Loyalsoldier/domain-list-custom.git"
 COMPILER_REF = "efacb51b8950ae673ebb6dcb9e7ecdd1decb1b6d"
-CATEGORIES = (
-    "china-list",
-    "apple-cn",
-    "google-cn",
-    "gfw",
-    "win-spy",
-    "win-update",
-    "win-extra",
+CATEGORIES = ("private", "cn", "gfw")
+REQUIRED_RULES = (
+    "private=localhost",
+    "cn=qq.com",
+    "cn=a1.mzstatic.com",
+    "cn=265.com",
+    "gfw=youtube.com",
 )
+DIRECT_TLD_SOURCE = (
+    "https://raw.githubusercontent.com/"
+    "Loyalsoldier/v2ray-rules-dat/release/direct-tld-list.txt"
+)
+SOURCE_COMPONENTS = {
+    "private": (
+        (
+            "v2fly-private",
+            "https://raw.githubusercontent.com/"
+            "v2fly/domain-list-community/master/data/private",
+        ),
+    ),
+    # This personal CN category folds known-direct domains, Apple China and
+    # Google China into one target. Bare TLD rules are explicitly filtered.
+    "cn": (
+        (
+            "direct-list",
+            "https://raw.githubusercontent.com/"
+            "Loyalsoldier/v2ray-rules-dat/release/direct-list.txt",
+        ),
+        (
+            "apple-cn",
+            "https://raw.githubusercontent.com/"
+            "Loyalsoldier/v2ray-rules-dat/release/apple-cn.txt",
+        ),
+        (
+            "google-cn",
+            "https://raw.githubusercontent.com/"
+            "Loyalsoldier/v2ray-rules-dat/release/google-cn.txt",
+        ),
+    ),
+    "gfw": (
+        (
+            "gfw",
+            "https://raw.githubusercontent.com/"
+            "Loyalsoldier/v2ray-rules-dat/release/gfw.txt",
+        ),
+    ),
+}
 
 
 def run(command: list[str], cwd: Path | None = None) -> None:
@@ -38,7 +72,7 @@ def run(command: list[str], cwd: Path | None = None) -> None:
     subprocess.run(command, cwd=cwd, check=True)
 
 
-def download(url: str, destination: Path) -> int:
+def download(url: str) -> tuple[bytes, int]:
     request = urllib.request.Request(
         url,
         headers={"User-Agent": "custom-geosite-builder/1.0"},
@@ -47,8 +81,7 @@ def download(url: str, destination: Path) -> int:
         payload = response.read()
     if not payload.strip():
         raise RuntimeError(f"Downloaded an empty rule list: {url}")
-    destination.write_bytes(payload)
-    return sum(1 for line in payload.splitlines() if line.strip())
+    return payload, sum(1 for line in payload.splitlines() if line.strip())
 
 
 def sha256(path: Path) -> str:
@@ -79,8 +112,8 @@ def main() -> int:
     require_command("git")
     require_command("go")
 
-    counts: dict[str, int] = {}
-    urls: dict[str, str] = {}
+    source_manifest: dict[str, list[dict[str, str | int]]] = {}
+    filters: list[dict[str, str | int]] = []
 
     with tempfile.TemporaryDirectory(prefix="custom-geosite-") as temporary:
         temporary_path = Path(temporary)
@@ -89,11 +122,57 @@ def main() -> int:
         compiler_output = temporary_path / "compiler-output"
         data_path.mkdir()
 
+        print(f"Downloading CN TLD exclusion list: {DIRECT_TLD_SOURCE}", flush=True)
+        tld_payload, tld_line_count = download(DIRECT_TLD_SOURCE)
+        excluded_tlds = {
+            line.strip().lower()
+            for line in tld_payload.splitlines()
+            if line.strip() and not line.lstrip().startswith(b"#")
+        }
+        forbidden_rules = tuple(
+            f"cn={rule.decode('ascii')}" for rule in sorted(excluded_tlds)
+        )
+
         for category in CATEGORIES:
-            url = f"{SOURCE_BASE}/{category}.txt"
-            print(f"Downloading {category}: {url}", flush=True)
-            counts[category] = download(url, data_path / category)
-            urls[category] = url
+            destination = data_path / category
+            source_manifest[category] = []
+            with destination.open("wb") as output_file:
+                for component, url in SOURCE_COMPONENTS[category]:
+                    print(f"Downloading {category}/{component}: {url}", flush=True)
+                    payload, line_count = download(url)
+                    removed_count = 0
+                    if category == "cn" and component == "direct-list":
+                        original_lines = payload.splitlines()
+                        filtered_lines = [
+                            line
+                            for line in original_lines
+                            if line.strip().lower() not in excluded_tlds
+                        ]
+                        removed_count = len(original_lines) - len(filtered_lines)
+                        payload = b"\n".join(filtered_lines) + b"\n"
+                    output_file.write(payload)
+                    if not payload.endswith(b"\n"):
+                        output_file.write(b"\n")
+                    source_manifest[category].append(
+                        {
+                            "component": component,
+                            "source": url,
+                            "source_lines": line_count,
+                            "output_lines": sum(
+                                1 for line in payload.splitlines() if line.strip()
+                            ),
+                            "excluded_rules": removed_count,
+                        }
+                    )
+        filters.append(
+            {
+                "target": "cn/direct-list",
+                "action": "remove exact bare TLD rules",
+                "source": DIRECT_TLD_SOURCE,
+                "source_lines": tld_line_count,
+                "removed_rules": len(excluded_tlds),
+            }
+        )
 
         run(["git", "clone", "--no-checkout", COMPILER_REPOSITORY, str(compiler_path)])
         run(["git", "checkout", COMPILER_REF], cwd=compiler_path)
@@ -126,6 +205,8 @@ def main() -> int:
             ".",
             f"--file={output / 'geosite.dat'}",
             f"--expect={','.join(CATEGORIES)}",
+            f"--require={','.join(REQUIRED_RULES)}",
+            f"--forbid={','.join(forbidden_rules)}",
         ],
         cwd=verifier_path,
     )
@@ -147,9 +228,10 @@ def main() -> int:
             "sha256": digest,
         },
         "categories": [
-            {"name": category, "source": urls[category], "source_lines": counts[category]}
+            {"name": category, "sources": source_manifest[category]}
             for category in CATEGORIES
         ],
+        "filters": filters,
     }
     (output / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",

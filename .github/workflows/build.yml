@@ -1,4 +1,4 @@
-name: Build minimal geosite.dat
+name: Build personal geosite.dat
 
 on:
   workflow_dispatch:
@@ -37,14 +37,14 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6
         with:
-          name: minimal-geosite
+          name: personal-geosite
           path: dist/*
           if-no-files-found: error
 
       - name: Set release metadata
         run: |
           echo "TAG_NAME=build-$(date -u +%Y%m%d-%H%M)-${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
-          echo "RELEASE_NAME=Minimal geosite.dat $(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
+          echo "RELEASE_NAME=Personal geosite.dat $(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2

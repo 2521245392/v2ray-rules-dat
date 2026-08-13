@@ -14,6 +14,8 @@ import (
 func main() {
 	file := flag.String("file", "", "path to geosite.dat")
 	expect := flag.String("expect", "", "comma-separated expected category names")
+	require := flag.String("require", "", "comma-separated category=value rules that must exist")
+	forbid := flag.String("forbid", "", "comma-separated category=value rules that must not exist")
 	flag.Parse()
 
 	if *file == "" || *expect == "" {
@@ -44,6 +46,55 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("verified: exactly %d categories\n", len(actual))
+
+	for _, item := range strings.Split(*require, ",") {
+		if item == "" {
+			continue
+		}
+		parts := strings.SplitN(item, "=", 2)
+		if len(parts) != 2 || !containsRule(&list, parts[0], parts[1]) {
+			fmt.Fprintf(os.Stderr, "required rule not found: %s\n", item)
+			os.Exit(1)
+		}
+		fmt.Printf("verified required rule: %s\n", item)
+	}
+
+	for _, item := range strings.Split(*forbid, ",") {
+		if item == "" {
+			continue
+		}
+		parts := strings.SplitN(item, "=", 2)
+		if len(parts) != 2 {
+			fmt.Fprintf(os.Stderr, "invalid forbidden rule: %s\n", item)
+			os.Exit(2)
+		}
+		if containsRule(&list, parts[0], parts[1]) {
+			fmt.Fprintf(os.Stderr, "forbidden rule found: %s\n", item)
+			os.Exit(1)
+		}
+	}
+	fmt.Printf("verified: %d forbidden rules are absent\n", countItems(*forbid))
+}
+
+func countItems(value string) int {
+	if value == "" {
+		return 0
+	}
+	return len(strings.Split(value, ","))
+}
+
+func containsRule(list *router.GeoSiteList, category string, value string) bool {
+	for _, entry := range list.Entry {
+		if !strings.EqualFold(entry.CountryCode, category) {
+			continue
+		}
+		for _, domain := range entry.Domain {
+			if strings.EqualFold(domain.Value, value) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func fail(err error) {
