@@ -3,6 +3,10 @@ name: Build V2Ray rules dat files
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
   schedule:
@@ -234,6 +238,48 @@ jobs:
           file_glob: true
           file: ./publish/*
           overwrite: true
+
+      - name: Delete all older releases and their tags
+        uses: actions/github-script@v8
+        env:
+          CURRENT_TAG: ${{ env.TAG_NAME }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const releases = await github.paginate(
+              github.rest.repos.listReleases,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+              },
+            );
+
+            for (const release of releases) {
+              if (release.tag_name === process.env.CURRENT_TAG) {
+                continue;
+              }
+
+              core.info(`Deleting release ${release.name ?? release.tag_name}`);
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+              });
+
+              try {
+                await github.rest.git.deleteRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `tags/${release.tag_name}`,
+                });
+              } catch (error) {
+                if (error.status !== 404) {
+                  throw error;
+                }
+                core.info(`Tag ${release.tag_name} was already absent`);
+              }
+            }
 
       - name: Push assets to release branch
         run: |

@@ -12,6 +12,7 @@
 - 生成适用于 V2Ray、Xray-core 等程序的 `geosite.dat`。
 - 支持通过 [`direct.txt`](./direct.txt) 维护额外需要直连的域名，无需修改工作流。
 - 构建成功后自动发布到 GitHub Releases，并同步到 `release` 分支。
+- 每次构建完成后删除旧 Releases 及其标签，只保留最新一次发布。
 
 ## 自定义直连域名
 
