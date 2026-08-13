@@ -8,7 +8,8 @@
 
 - 每天北京时间 06:00 通过 GitHub Actions 自动更新和构建。
 - 合并 `v2fly/domain-list-community` 与 `blackmatrix7/ios_rule_script` 的相关域名数据。
-- `geosite:cn` 使用 Blackmatrix7 的 `ChinaMax_Domain.txt` 大型中国域名集合。
+- `geosite:cn` 使用 Blackmatrix7 的精简 `China_Domain.txt` 中国域名集合。
+- `geosite:apple` 仅包含 `apple.china.conf` 中可使用中国大陆 Apple CDN/DNS 的精确域名。
 - 生成适用于 V2Ray、Xray-core 等程序的 `geosite.dat`。
 - 支持通过 [`direct.txt`](./direct.txt) 维护额外需要直连的域名，无需修改工作流。
 - 构建成功后自动发布到 GitHub Releases，并同步到 `release` 分支。
@@ -75,6 +76,7 @@ full:www.example.com
 
 - [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)
 - [blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script)
+- [felixonmars/dnsmasq-china-list](https://github.com/felixonmars/dnsmasq-china-list)
 - [Loyalsoldier/domain-list-custom](https://github.com/Loyalsoldier/domain-list-custom)
 - [Loyalsoldier/v2ray-rules-dat](https://github.com/Loyalsoldier/v2ray-rules-dat)
 

@@ -99,7 +99,7 @@ jobs:
 
       - name: Build CN list
         run: |
-          cat ios_rule_script/rule/Clash/ChinaMax/ChinaMax_Domain.txt \
+          cat ios_rule_script/rule/Clash/China/China_Domain.txt \
             | sed '/^\s*#/d' \
             | grep -v '^keyword:' \
             | grep -v -E '^[0-9]' \
@@ -135,27 +135,14 @@ jobs:
 
       - name: Build Apple list
         run: |
-          cat ios_rule_script/rule/Clash/Apple/Apple_Domain.txt \
-            | sed '/^\s*#/d' \
-            | grep -v '^keyword:' \
-            | grep -v -E '^[0-9]' \
-            | sed '/^[^\.]/ s/^/full:/' \
-            | sed 's/^\.\([^.]*\)/\1/' \
+          curl --fail --silent --show-error --location \
+            --retry 5 --connect-timeout 10 \
+            https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/apple.china.conf \
+            | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' \
             | sort --ignore-case -u \
-            > temp-apple.txt
-
-          ./findRedundantDomain.py temp-apple.txt temp-apple-redundant-unsort
-          sort temp-apple-redundant-unsort > temp-apple-redundant-sort
-          diff temp-apple-redundant-sort temp-apple.txt \
-            | awk '/^>/{print $2}' > temp-apple-deduped.txt
-
-          cat temp-apple-deduped.txt \
-            | sort --ignore-case -u \
-            | perl -ne '
-                if    (/^(full:[^\s]+)$/) { print "$1\n" }
-                elsif (/^((?=^.{1,255})[a-zA-Z0-9][-_a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-_a-zA-Z0-9]{0,62})*)/) { print "$1\n" }
-              ' \
             > ./community/data/apple
+
+          test -s ./community/data/apple
 
       - name: Build GFW list
         run: |
