@@ -95,7 +95,7 @@ jobs:
 
       - name: Build CN list
         run: |
-          cat ios_rule_script/rule/Clash/China/China_Domain.txt \
+          cat ios_rule_script/rule/Clash/ChinaMax/ChinaMax_Domain.txt \
             | sed '/^\s*#/d' \
             | grep -v '^keyword:' \
             | grep -v -E '^[0-9]' \
@@ -177,7 +177,7 @@ jobs:
             "GitLab/GitLab.yaml"
             "Reddit/Reddit.yaml"
           )
-          
+
           > temp-gfw-raw.txt
           for app in "${GFW_APPS[@]}"; do
             FILE_PATH="ios_rule_script/rule/Clash/${app}"
@@ -192,16 +192,16 @@ jobs:
               echo "Warning: $FILE_PATH not found! Skipping..."
             fi
           done
-          
+
           # 初步排序并去重
           sort --ignore-case -u temp-gfw-raw.txt > temp-gfw-with-redundant
-          
+
           # 使用 Python 脚本移除冗余的子域名
           ./findRedundantDomain.py temp-gfw-with-redundant temp-gfw-redundant-unsort
           sort temp-gfw-redundant-unsort > temp-gfw-redundant-sort
           diff temp-gfw-redundant-sort temp-gfw-with-redundant \
             | awk '/^>/{print $2}' > temp-gfw-deduped.txt
-            
+
           # 写入最终的 community/data/gfw
           cat temp-gfw-deduped.txt > ./community/data/gfw
 
