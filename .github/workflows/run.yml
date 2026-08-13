@@ -1,0 +1,255 @@
+name: Build V2Ray rules dat files
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 22 * * *"
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "**/README.md"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set variables
+        run: |
+          echo "RELEASE_NAME=Released on $(date +%Y%m%d%H%M)" >> $GITHUB_ENV
+          echo "TAG_NAME=$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Checkout this repo
+        uses: actions/checkout@v6
+
+      # 新增：拉取第三方规则仓库，使用 sparse-checkout 只拉取需要的目录，极速且稳定
+      - name: Checkout blackmatrix7/ios_rule_script
+        uses: actions/checkout@v6
+        with:
+          repository: blackmatrix7/ios_rule_script
+          path: ios_rule_script
+          sparse-checkout: |
+            rule/Clash
+          sparse-checkout-cone-mode: false
+
+      - name: Create necessary files
+        run: |
+          touch direct-need-to-remove.txt direct-reserve.txt
+          cat > findRedundantDomain.py << 'EOF'
+          #!/usr/bin/env python3
+          import sys
+
+          def find_redundant(input_file, output_file):
+              try:
+                  with open(input_file, 'r') as f:
+                      domains = [line.strip() for line in f if line.strip()]
+              except FileNotFoundError:
+                  open(output_file, 'w').close()
+                  return
+
+              domain_set = set(domains)   # O(1) lookup, faster than list search
+              redundant = set()
+
+              for domain in domains:
+                  parts = domain.split('.')
+                  for i in range(1, len(parts)):
+                      parent = '.'.join(parts[i:])
+                      if parent in domain_set:
+                          redundant.add(domain)
+                          break
+
+              with open(output_file, 'w') as f:
+                  for domain in sorted(redundant):
+                      f.write(domain + '\n')
+
+          if __name__ == '__main__':
+              if len(sys.argv) != 3:
+                  print("Usage: findRedundantDomain.py <input> <output>")
+                  sys.exit(1)
+              find_redundant(sys.argv[1], sys.argv[2])
+          EOF
+          chmod +x findRedundantDomain.py
+
+      - name: Checkout Loyalsoldier/domain-list-custom
+        uses: actions/checkout@v6
+        with:
+          repository: Loyalsoldier/domain-list-custom
+          path: custom
+
+      - name: Checkout v2fly/domain-list-community
+        uses: actions/checkout@v6
+        with:
+          repository: v2fly/domain-list-community
+          path: community
+
+      - name: Setup Go
+        uses: actions/setup-go@v6 # 修正为稳定的 v6 版本
+        with:
+          go-version-file: ./custom/go.mod
+          cache-dependency-path: ./custom/go.sum
+
+      - name: Build CN list
+        run: |
+          cat ios_rule_script/rule/Clash/China/China_Domain.txt \
+            | sed '/^\s*#/d' \
+            | grep -v '^keyword:' \
+            | grep -v -E '^[0-9]' \
+            | sed '/^[^\.]/ s/^/full:/' \
+            | sed 's/^\.\([^.]*\)/\1/' \
+            > temp-direct.txt
+
+          # direct.txt 中普通域名匹配自身及其子域名，full: 前缀仅匹配完整域名。
+          sed -e 's/\r$//' \
+              -e '/^[[:space:]]*#/d' \
+              -e '/^[[:space:]]*$/d' \
+              direct.txt >> temp-direct.txt
+
+          sort --ignore-case -u temp-direct.txt > direct-list-with-redundant
+
+          ./findRedundantDomain.py direct-list-with-redundant direct-list-redundant-unsort
+          sort direct-list-redundant-unsort > direct-list-redundant-sort
+          diff direct-list-redundant-sort direct-list-with-redundant \
+            | awk '/^>/{print $2}' > direct-list-without-redundant
+
+          diff <(sort direct-need-to-remove.txt) direct-list-without-redundant \
+            | awk '/^>/{print $2}' > temp-cn.txt
+
+          cat temp-cn.txt \
+            | sort --ignore-case -u \
+            | perl -ne '
+                if    (/^(full:[^\s]+)$/) { print "$1\n" }
+                elsif (/^((?=^.{1,255})[a-zA-Z0-9][-_a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-_a-zA-Z0-9]{0,62})*)/) { print "$1\n" }
+              ' \
+            > ./community/data/cn
+
+          cat direct-reserve.txt >> ./community/data/cn
+
+      - name: Build Apple list
+        run: |
+          cat ios_rule_script/rule/Clash/Apple/Apple_Domain.txt \
+            | sed '/^\s*#/d' \
+            | grep -v '^keyword:' \
+            | grep -v -E '^[0-9]' \
+            | sed '/^[^\.]/ s/^/full:/' \
+            | sed 's/^\.\([^.]*\)/\1/' \
+            | sort --ignore-case -u \
+            > temp-apple.txt
+
+          ./findRedundantDomain.py temp-apple.txt temp-apple-redundant-unsort
+          sort temp-apple-redundant-unsort > temp-apple-redundant-sort
+          diff temp-apple-redundant-sort temp-apple.txt \
+            | awk '/^>/{print $2}' > temp-apple-deduped.txt
+
+          cat temp-apple-deduped.txt \
+            | sort --ignore-case -u \
+            | perl -ne '
+                if    (/^(full:[^\s]+)$/) { print "$1\n" }
+                elsif (/^((?=^.{1,255})[a-zA-Z0-9][-_a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-_a-zA-Z0-9]{0,62})*)/) { print "$1\n" }
+              ' \
+            > ./community/data/apple
+
+      - name: Build GFW list
+        run: |
+          GFW_APPS=(
+            "Google/Google.yaml"
+            "Disney/Disney.yaml"
+            "Netflix/Netflix.yaml"
+            "TikTok/TikTok.yaml"
+            "Spotify/Spotify.yaml"
+            "Amazon/Amazon.yaml"
+            "Twitch/Twitch.yaml"
+            "Discord/Discord.yaml"
+            "Wikipedia/Wikipedia.yaml"
+            "Claude/Claude.yaml"
+            "Telegram/Telegram.yaml"
+            "OpenAI/OpenAI.yaml"
+            "Facebook/Facebook.yaml"
+            "YouTube/YouTube.yaml"
+            "Twitter/Twitter.yaml"
+            "Steam/Steam.yaml"
+            "Epic/Epic.yaml"
+            "GitHub/GitHub.yaml"
+            "GitLab/GitLab.yaml"
+            "Reddit/Reddit.yaml"
+          )
+          
+          > temp-gfw-raw.txt
+          for app in "${GFW_APPS[@]}"; do
+            FILE_PATH="ios_rule_script/rule/Clash/${app}"
+            if [ -f "$FILE_PATH" ]; then
+              echo "Processing ${app}..."
+              cat "$FILE_PATH" | awk -F',' '
+                /^[ \t]*- DOMAIN,/{gsub(/^[ \t]+|[ \t]+$|\r/, "", $2); print "full:"$2}
+                /^[ \t]*- DOMAIN-SUFFIX,/{gsub(/^[ \t]+|[ \t]+$|\r/, "", $2); print $2}
+                /^[ \t]*- DOMAIN-KEYWORD,/{gsub(/^[ \t]+|[ \t]+$|\r/, "", $2); print "keyword:"$2}
+              ' >> temp-gfw-raw.txt
+            else
+              echo "Warning: $FILE_PATH not found! Skipping..."
+            fi
+          done
+          
+          # 初步排序并去重
+          sort --ignore-case -u temp-gfw-raw.txt > temp-gfw-with-redundant
+          
+          # 使用 Python 脚本移除冗余的子域名
+          ./findRedundantDomain.py temp-gfw-with-redundant temp-gfw-redundant-unsort
+          sort temp-gfw-redundant-unsort > temp-gfw-redundant-sort
+          diff temp-gfw-redundant-sort temp-gfw-with-redundant \
+            | awk '/^>/{print $2}' > temp-gfw-deduped.txt
+            
+          # 写入最终的 community/data/gfw
+          cat temp-gfw-deduped.txt > ./community/data/gfw
+
+      - name: Build Microsoft list
+        run: |
+          echo "Processing Microsoft rules..."
+          cat ios_rule_script/rule/Clash/Microsoft/Microsoft.yaml | awk -F',' '
+            /^[ \t]*- DOMAIN,/{gsub(/^[ \t]+|[ \t]+$|\r/, "", $2); print "full:"$2}
+            /^[ \t]*- DOMAIN-SUFFIX,/{gsub(/^[ \t]+|[ \t]+$|\r/, "", $2); print $2}
+            /^[ \t]*- DOMAIN-KEYWORD,/{gsub(/^[ \t]+|[ \t]+$|\r/, "", $2); print "keyword:"$2}
+          ' | sort --ignore-case -u > ./community/data/microsoft
+
+      - name: Build geosite.dat
+        run: |
+          cd custom
+          go run ./ --datapath=../community/data
+
+      - name: Move and generate sha256
+        run: |
+          install -Dp ./custom/publish/geosite.dat ./publish/geosite.dat
+          cd publish
+          sha256sum geosite.dat > geosite.dat.sha256sum
+
+      - name: Release and upload assets
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          release_name: ${{ env.RELEASE_NAME }}
+          tag: ${{ env.TAG_NAME }}
+          file_glob: true
+          file: ./publish/*
+          overwrite: true
+
+      - name: Push assets to release branch
+        run: |
+          cd publish
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b release
+          git add .
+          git commit -m "${{ env.RELEASE_NAME }}"
+          git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git push -f -u origin release
+
+      - name: Purge jsdelivr CDN
+        run: |
+          cd publish
+          for file in $(ls); do
+            curl -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@release/${file}"
+          done

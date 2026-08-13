@@ -1,0 +1,10 @@
+# 额外需要直连的域名。
+#
+# 泛域名（匹配域名本身及其所有子域名）：
+# example.com
+#
+# 完整域名（只匹配指定的域名）：
+# full:www.example.com
+
+doubao.com
+deepseek.com
