@@ -133,16 +133,37 @@ jobs:
 
           cat direct-reserve.txt >> ./community/data/cn
 
-      - name: Build Apple list
+      - name: Build global Apple list
+        run: |
+          cat ios_rule_script/rule/Clash/Apple/Apple_Domain.txt \
+            | sed '/^\s*#/d' \
+            | grep -v -E '^[0-9]' \
+            | perl -ne '
+                s/\r?\n$//;
+                if    (/^keyword:/) { print "$_\n" }
+                elsif (/^\.(.+)$/)  { print "$1\n" }
+                elsif (/\S/)        { print "full:$_\n" }
+              ' \
+            | sort --ignore-case -u \
+            > temp-apple.txt
+
+          ./findRedundantDomain.py temp-apple.txt temp-apple-redundant-unsort
+          sort temp-apple-redundant-unsort > temp-apple-redundant-sort
+          diff temp-apple-redundant-sort temp-apple.txt \
+            | awk '/^>/{print $2}' > ./community/data/apple
+
+          test -s ./community/data/apple
+
+      - name: Build Apple China list
         run: |
           curl --fail --silent --show-error --location \
             --retry 5 --connect-timeout 10 \
             https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/apple.china.conf \
             | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' \
             | sort --ignore-case -u \
-            > ./community/data/apple
+            > ./community/data/apple-cn
 
-          test -s ./community/data/apple
+          test -s ./community/data/apple-cn
 
       - name: Build GFW list
         run: |
@@ -183,6 +204,12 @@ jobs:
               echo "Warning: $FILE_PATH not found! Skipping..."
             fi
           done
+
+          # proxy.txt uses domain-list-community syntax and is merged into geosite:gfw.
+          sed -e 's/\r$//' \
+              -e '/^[[:space:]]*#/d' \
+              -e '/^[[:space:]]*$/d' \
+              proxy.txt >> temp-gfw-raw.txt
 
           # 初步排序并去重
           sort --ignore-case -u temp-gfw-raw.txt > temp-gfw-with-redundant

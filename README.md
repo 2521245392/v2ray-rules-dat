@@ -9,9 +9,10 @@
 - 每天北京时间 06:00 通过 GitHub Actions 自动更新和构建。
 - 合并 `v2fly/domain-list-community` 与 `blackmatrix7/ios_rule_script` 的相关域名数据。
 - `geosite:cn` 使用 Blackmatrix7 的精简 `China_Domain.txt` 中国域名集合。
-- `geosite:apple` 仅包含 `apple.china.conf` 中可使用中国大陆 Apple CDN/DNS 的精确域名。
+- `geosite:apple` 使用 Blackmatrix7 的完整 Apple 域名集合。
+- `geosite:apple-cn` 仅包含 `apple.china.conf` 中可使用中国大陆 Apple CDN/DNS 的精确域名。
 - 生成适用于 V2Ray、Xray-core 等程序的 `geosite.dat`。
-- 支持通过 [`direct.txt`](./direct.txt) 维护额外需要直连的域名，无需修改工作流。
+- 支持通过 [`direct.txt`](./direct.txt) 和 [`proxy.txt`](./proxy.txt) 维护额外需要直连或代理的域名，无需修改工作流。
 - 构建成功后自动发布到 GitHub Releases，并同步到 `release` 分支。
 - 每次构建完成后删除旧 Releases 及其标签，只保留最新一次发布。
 
@@ -34,6 +35,27 @@ full:www.example.com
 - 修改并推送 `direct.txt` 后，GitHub Actions 会自动重新构建规则文件。
 
 这些自定义规则最终会写入 `geosite:cn`，用于直连分流。
+
+## 自定义代理域名
+
+在仓库根目录的 [`proxy.txt`](./proxy.txt) 中维护需要强制代理的域名，格式与 `direct.txt` 相同：
+
+```text
+# 匹配 example.com 本身及其所有子域名
+example.com
+
+# 只匹配指定的完整域名
+full:www.example.com
+
+# 按域名关键词匹配
+keyword:example
+```
+
+- 空行和以 `#` 开头的注释会被忽略。
+- 普通域名、`full:` 和 `keyword:` 规则均受支持。
+- 修改并推送 `proxy.txt` 后，GitHub Actions 会自动重新构建规则文件。
+
+这些自定义规则最终会合并到 `geosite:gfw`，因此现有的 `GEOSITE,gfw,手动选择` 路由规则会直接生效。
 
 ## 下载
 
